@@ -1,0 +1,85 @@
+{
+  "name": "luffy-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0",
+    "lint": "eslint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "desktop:ui": "node scripts/build-desktop.cjs",
+    "desktop:dev": "electron .",
+    "desktop:pack": "electron-builder --dir",
+    "desktop:dist": "electron-builder --win nsis --x64",
+    "test:desktop": "node --test tests/desktop.test.cjs"
+  },
+  "dependencies": {
+    "drizzle-kit": "0.31.4",
+    "drizzle-orm": "0.44.2",
+    "lucide-react": "^1.53.0",
+    "next": "16.2.6",
+    "pg": "8.16.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "serialport": "^13.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "electron": "^35.7.5",
+    "electron-builder": "^26.15.3",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "main": "desktop/main.cjs",
+  "productName": "智行 AI Lab",
+  "description": "本地 AI 小车教学工作台",
+  "author": "Zhixing AI Lab",
+  "build": {
+    "appId": "edu.zhixing.ailab",
+    "productName": "智行 AI Lab",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**",
+      "desktop-ui/**",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "desktop-runtime",
+        "to": "engine",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Zhixing-AI-Lab-${version}-Windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

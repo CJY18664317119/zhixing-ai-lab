@@ -1,0 +1,28 @@
+name: Build Windows Desktop
+on:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build offline installer
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zhixing-AI-Lab-Windows-x64
+          path: release/*.exe
+          if-no-files-found: error

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.venv/
+trainer/weights/
+__pycache__/
+dist/
+build/
+
+tsconfig.tsbuildinfo
+*.log
+
+release/
+out/
+desktop-ui/
+desktop-runtime/
+*.spec

@@ -1,0 +1,5 @@
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');
+test('桌面界面包含 HTML 与离线静态资源',()=>{assert.ok(fs.existsSync('desktop-ui/index.html'));assert.ok(fs.existsSync('desktop-ui/_next/static'));});
+test('桌面桥接启用隔离，拒绝任意 IPC 暴露',()=>{const main=fs.readFileSync('desktop/main.cjs','utf8');assert.ok(main.includes('contextIsolation:true'));assert.ok(main.includes('nodeIntegration:false'));assert.ok(main.includes('sandbox:true'));const preload=fs.readFileSync('desktop/preload.cjs','utf8');assert.ok(!preload.includes('exposeInMainWorld(\'ipcRenderer\''));});
+test('配置保留用户数据并包含本地引擎',()=>{const p=require('../package.json');assert.equal(p.build.nsis.deleteAppDataOnUninstall,false);assert.equal(p.build.extraResources[0].to,'engine');});
+test('串口退出停车与本地引擎授权已接入',()=>{const main=fs.readFileSync('desktop/main.cjs','utf8');assert.ok(main.includes("serial.write('STOP\\n'"));assert.ok(main.includes('X-Zhixing-Token'));assert.ok(main.includes('app.requestSingleInstanceLock'));});

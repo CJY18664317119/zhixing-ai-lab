@@ -1,0 +1,2 @@
+export function desktop():any {return typeof window!=='undefined'?(window as any).zhixingDesktop:null;}
+export async function engineRequest(endpoint:string,body?:any){const d=desktop();if(d)return d.request(endpoint,body);const r=await fetch('http://127.0.0.1:8765'+endpoint,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.detail||'引擎请求失败');return data;}
