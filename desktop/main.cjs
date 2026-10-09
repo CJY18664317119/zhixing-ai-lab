@@ -6,21 +6,33 @@ const {pathToFileURL}=require('node:url');
 const crypto=require('node:crypto');
 const {SerialPort}=require('serialport');
 protocol.registerSchemesAsPrivileged([{scheme:'zhixing',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
-let win,engine,engineURL,engineToken=crypto.randomBytes(32).toString('hex'),serial,closing=false,lastWrite=0;
+let win,engine,engineURL,engineToken=crypto.randomBytes(32).toString('hex'),serial,closing=false,lastWrite=0,serialProtocol='文字';
 const dataDir=()=>path.join(app.getPath('userData'),'projects');
 function trusted(event){if(!event.senderFrame?.url.startsWith('zhixing://app/'))throw Error('不可信页面');}
 function handle(name,fn){ipcMain.handle(name,(event,...args)=>{trusted(event);return fn(...args);});}
-async function stopCar(){if(serial?.isOpen){await new Promise(resolve=>serial.write('STOP\n',()=>serial.drain(resolve)));}}
+// Stop command must match the user-selected serial protocol so it stays
+// compatible with the ESP32 firmware; never send an unconditionally hardcoded
+// 'STOP' that could break a numeric/JSON protocol.
+function stopCommand(protocol){if(protocol==='数字')return '0';if(protocol==='JSON')return '{"cmd":"STOP"}';return 'STOP';}
+async function stopCar(){if(!serial?.isOpen)return;const cmd=stopCommand(serialProtocol);await new Promise((resolve,reject)=>serial.write(cmd+'\n',e=>e?reject(e):serial.drain(resolve)));}
 async function disconnect(){await stopCar();if(serial?.isOpen)await new Promise(resolve=>serial.close(resolve));serial=null;}
 async function startEngine(){
- const base=app.isPackaged?path.join(process.resourcesPath,'engine'):path.join(__dirname,'..','desktop-runtime');
+ // PyInstaller one-folder bundle is nested one level deeper (zhixing-engine/).
+ const runtimeDir=app.isPackaged?path.join(process.resourcesPath,'engine'):path.join(__dirname,'..','desktop-runtime','zhixing-engine');
+ const base=runtimeDir;
  const exe=path.join(base,process.platform==='win32'?'zhixing-engine.exe':'zhixing-engine');
  try{await fs.access(exe);}catch{return;}
  engine=spawn(exe,[],{cwd:base,windowsHide:true,env:{...process.env,ZHIXING_DATA:path.join(app.getPath('userData'),'training'),ZHIXING_TOKEN:engineToken,YOLO_OFFLINE:'true'}});
- engine.stdout.on('data',data=>{for(const line of data.toString().split('\n')){if(line.startsWith('ZHIXING_READY '))engineURL=line.trim().slice(14);}});
  const log=path.join(app.getPath('userData'),'engine.log');
+ engine.stdout.on('data',data=>{for(const line of data.toString().split('\n')){if(line.startsWith('ZHIXING_READY ')){engineURL=line.trim().slice(14);waitForHealth(log);}}});
  engine.stderr.on('data',data=>fs.appendFile(log,data).catch(()=>{}));
  engine.on('error',err=>fs.appendFile(log,String(err)).catch(()=>{}));engine.on('exit',()=>{engineURL=null;});
+}
+// Do not trust the ZHIXING_READY banner alone: poll /health until the engine is
+// truly serving and the base weights are present.
+async function waitForHealth(log){
+ for(let i=0;i<60;i++){try{const r=await fetch(engineURL+'/health');const j=await r.json();if(r.ok&&j.status==='ready'){fs.appendFile(log,'[health] ready, weights='+JSON.stringify(j.offline_weights)+'\n').catch(()=>{});return;}}catch{}await new Promise(res=>setTimeout(res,1000));}
+ fs.appendFile(log,'[health] WARNING: /health did not report ready after 60s\n').catch(()=>{});
 }
 handle('projects:read',async()=>{try{return JSON.parse(await fs.readFile(path.join(dataDir(),'projects.json'),'utf8'));}catch(e){if(e.code==='ENOENT')return [];throw e;}});
 let saveQueue=Promise.resolve();
@@ -33,7 +45,7 @@ handle('engine:request',async(endpoint,body)=>{
 });
 handle('engine:export',async id=>{if(!engineURL||!/^[-a-f0-9]+$/.test(id))throw Error('模型无效');const result=await dialog.showSaveDialog(win,{defaultPath:`zhixing-${id}.onnx`,filters:[{name:'ONNX 模型',extensions:['onnx']}]});if(result.canceled)return;const r=await fetch(engineURL+'/export/'+id,{headers:{'X-Zhixing-Token':engineToken}});if(!r.ok)throw Error('导出失败');await fs.writeFile(result.filePath,Buffer.from(await r.arrayBuffer()));});
 handle('serial:list',()=>SerialPort.list());
-handle('serial:open',async(portPath,baud)=>{if(![9600,57600,115200].includes(baud))throw Error('波特率无效');const ports=await SerialPort.list();if(!ports.some(p=>p.path===portPath))throw Error('串口不存在');await disconnect();serial=new SerialPort({path:portPath,baudRate:baud,autoOpen:false});serial.on('error',()=>{win?.webContents.send('serial:disconnected');});serial.on('close',()=>win?.webContents.send('serial:disconnected'));await new Promise((resolve,reject)=>serial.open(e=>e?reject(e):resolve()));});
+handle('serial:open',async(portPath,baud,protocol)=>{if(![9600,57600,115200].includes(baud))throw Error('波特率无效');if(!['文字','数字','JSON'].includes(protocol||'文字'))throw Error('串口协议无效');serialProtocol=protocol||'文字';const ports=await SerialPort.list();if(!ports.some(p=>p.path===portPath))throw Error('串口不存在');await disconnect();serial=new SerialPort({path:portPath,baudRate:baud,autoOpen:false});serial.on('error',()=>{win?.webContents.send('serial:disconnected');});serial.on('close',()=>win?.webContents.send('serial:disconnected'));await new Promise((resolve,reject)=>serial.open(e=>e?reject(e):resolve()));});
 handle('serial:write',async(text,emergency)=>{if(typeof text!=='string'||text.length>256||!text.endsWith('\n')||text.slice(0,-1).includes('\n'))throw Error('串口指令无效');if(!serial?.isOpen)throw Error('串口未连接');if(!emergency&&Date.now()-lastWrite<100)return;lastWrite=Date.now();await new Promise((resolve,reject)=>serial.write(text,e=>e?reject(e):resolve()));});
 handle('serial:close',disconnect);
 if(!app.requestSingleInstanceLock())app.quit();else{

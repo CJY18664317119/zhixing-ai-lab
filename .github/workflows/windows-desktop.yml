@@ -1,28 +1,121 @@
 name: Build Windows Desktop
+
+# Manual only; never auto-publishes a release. Download the installer from the
+# workflow's "Artifacts" section after it succeeds.
 on:
   workflow_dispatch:
+    inputs:
+      retain_days:
+        description: 'Artifact retention in days'
+        required: false
+        default: '14'
+
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      # Keep the packaged engine fully offline: never auto-download deps/weights
+      # at train/inference time. Build downloads the base weights once only.
+      YOLO_OFFLINE: 'true'
+      YOLO_AUTOINSTALL: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - name: Checkout (shallow, no token)
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm 10
+        uses: pnpm/action-setup@v4
         with:
           version: 10
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: actions/setup-python@v5
+          cache: pnpm
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Install VS Build Tools (native serialport fallback)
+        # Only needed if no prebuilt serialport binary matches; harmless if present.
+        run: |
+          choco install visualstudio2022buildtools --no-progress -y `
+            --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.Windows11SDK.22621" `
+            || echo "choco unavailable; relying on prebuilt serialport binary"
+
       - name: Build offline installer
         shell: pwsh
         run: ./scripts/build-windows.ps1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - uses: actions/upload-artifact@v4
+          # Use npmmirror to avoid GitHub connection resets seen on some networks.
+          ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
+          ELECTRON_BUILDER_BINARIES_MIRROR: 'https://npmmirror.com/mirrors/electron-builder-binaries/'
+          npm_config_registry: 'https://registry.npmmirror.com'
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build-log/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Generate acceptance report
+        if: success()
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path release -Filter *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Write-Error 'no installer produced'; exit 1 }
+          $sha = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
+          $sizeMB = [math]::Round($exe.Length / 1MB, 1)
+          $report = @"
+          # 智行 AI Lab — Windows 安装包验收报告
+
+          - 安装器: $($exe.Name)
+          - 大小: $sizeMB MB
+          - SHA256: $sha
+          - 构建时间 (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+          - 运行环境: GitHub Actions windows-latest (Windows Server)
+
+          ## 已自动验证
+          - [x] 构建脚本退出码 0，引擎可执行文件与基础权重已打包
+          - [x] release/SHA256.txt 已生成
+
+          ## 仍需 Windows 实机验收（本工作流无法代替）
+          - [ ] 干净电脑（无 Python/Node）安装并断网运行
+          - [ ] 分类 / 检测项目真实训练 + 推理 + ONNX 导出
+          - [ ] ESP32 串口协议、限频、低置信门槛、急停
+          - [ ] 拔掉 USB 后由 ESP32 固件负责停车
+
+          注意：本产物为手动下载的内部构件，未做代码签名，Windows 可能提示 SmartScreen。
+          "@
+          $report | Out-File -FilePath release/ACCEPTANCE.md -Encoding utf8
+
+      - name: Upload installer + checksums + report
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: Zhixing-AI-Lab-Windows-x64
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/SHA256.txt
+            release/ACCEPTANCE.md
           if-no-files-found: error
+          retention-days: ${{ github.event.inputs.retain_days || 14 }}
+
+      - name: Size guard notice
+        if: success()
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path release -Filter *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exe -and $exe.Length -gt 2000MB) {
+            Write-Warning "Installer exceeds 2000 MB; artifact/NSIS limits may apply before publishing."
+          }

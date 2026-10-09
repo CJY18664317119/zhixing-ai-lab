@@ -52,12 +52,18 @@
     "files": [
       "desktop/**",
       "desktop-ui/**",
-      "package.json"
+      "package.json",
+      "node_modules/**"
     ],
     "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "**/serialport/**",
+      "**/@serialport/**"
+    ],
     "extraResources": [
       {
-        "from": "desktop-runtime",
+        "from": "desktop-runtime/zhixing-engine",
         "to": "engine",
         "filter": [
           "**/*"

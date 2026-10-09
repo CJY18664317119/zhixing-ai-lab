@@ -1,6 +1,14 @@
 fastapi==0.115.12
 uvicorn==0.34.2
 ultralytics>=8.3.0,<9
+# lap is required by ultralytics for IoU/NMS; pin a compatible release so the
+# build is reproducible and training never tries to auto-install it at runtime.
+lap==0.5.12
 Pillow>=11,<12
 onnx>=1.17,<2
 onnxruntime>=1.20,<2
+# Build-time only; not bundled into the engine but needed to package it.
+pyinstaller>=6.10,<7
+
+# NOTE: set YOLO_AUTOINSTALL=false in the build/test environment so training
+# and inference never attempt to download dependencies or weights on their own.
