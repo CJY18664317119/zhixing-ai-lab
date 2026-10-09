@@ -54,6 +54,10 @@ Invoke-Checked 'create venv' {
 # --- 2. install python deps + PyInstaller -----------------------------
 Invoke-Checked 'install python requirements' {
     & $venvPy -m pip install --upgrade pip
+    # Bundle the CPU-only torch build: the offline engine runs on student laptops
+    # without a GPU. The default (CUDA) torch wheel is >2 GB and makes PyInstaller
+    # OOM / exit 1 while collecting binaries; CPU torch keeps the bundle small.
+    & $venvPy -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
     & $venvPy -m pip install -r trainer/requirements.txt
 }
 
@@ -79,8 +83,13 @@ foreach ($w in @('yolo11n.pt','yolo11n-cls.pt')) {
 }
 
 # --- 4. package python engine with PyInstaller -------------------------
+$pyiLog = Join-Path $buildLogDir 'pyinstaller.log'
 Invoke-Checked 'pyinstaller package engine' {
-    & $venvPy -m PyInstaller zhixing-engine.spec --noconfirm --clean --distpath desktop-runtime
+    & $venvPy -m PyInstaller zhixing-engine.spec --noconfirm --clean --distpath desktop-runtime --log-level INFO *> $pyiLog
+    $code = $LASTEXITCODE
+    Write-Host "----- PyInstaller output (tail) -----"
+    Get-Content $pyiLog | Select-Object -Last 150 | Write-Host
+    if ($code -and $code -ne 0) { throw "PyInstaller exited with code $code" }
 }
 
 # --- 5. verify packaged engine layout ----------------------------------
