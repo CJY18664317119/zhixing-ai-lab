@@ -13,4 +13,5 @@ release/
 out/
 desktop-ui/
 desktop-runtime/
-*.spec
+# NOTE: zhixing-engine.spec is hand-maintained SOURCE for PyInstaller and must be
+# tracked (it was wrongly ignored as *.spec before).
